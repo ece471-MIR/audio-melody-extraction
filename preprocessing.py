@@ -91,12 +91,6 @@ def shift_pitch_classes(pitch_idx: np.ndarray, k: int, num_pitches: int) -> np.n
 # CQT computation
 
 def compute_log_cqt(audio: np.ndarray, config: Config) -> np.ndarray:
-    """
-    Compute log-magnitude CQT.
-
-    Returns:
-        log_cqt: [freq_bins=365, time_frames=T]
-    """
     cqt = librosa.cqt(
         audio,
         sr=config.SAMPLE_RATE,
@@ -113,12 +107,6 @@ def compute_log_cqt(audio: np.ndarray, config: Config) -> np.ndarray:
 # annotation loaders
 
 def load_mir1k_annotation(pv_path: Path) -> tuple[np.ndarray, np.ndarray]:
-    """
-    MIR-1K .pv files contain f0 values at 10 ms intervals (Hz).
-    Returns:
-        times_10ms: [N] in seconds
-        f0_10ms: [N] in Hz
-    """
     with open(pv_path, "r") as f:
         lines = f.readlines()
 
@@ -141,12 +129,6 @@ def load_mir1k_annotation(pv_path: Path) -> tuple[np.ndarray, np.ndarray]:
 
 
 def load_mirex05_annotation(ref_path: Path) -> tuple[np.ndarray, np.ndarray]:
-    """
-    MIREX05 REF files: "timestamp_sec pitch_hz" per line.
-    Returns:
-        times: [N] seconds
-        f0:    [N] Hz
-    """
     times = []
     f0s = []
     with open(ref_path, "r") as f:
@@ -176,13 +158,6 @@ def load_mirex05_annotation(ref_path: Path) -> tuple[np.ndarray, np.ndarray]:
 
 
 def interpolate_f0_to_frames(times: np.ndarray, f0: np.ndarray, n_frames: int, config: Config) -> np.ndarray:
-    """
-    Given sparse f0 annotation (times, f0), interpolate to per-frame f0
-    for a CQT with 'n_frames' frames and hop size config.HOP_SIZE.
-
-    Returns:
-        f0_per_frame: [n_frames] in Hz
-    """
     if len(times) == 0 or len(f0) == 0:
         return np.zeros(n_frames, dtype=np.float32)
 
@@ -194,11 +169,6 @@ def interpolate_f0_to_frames(times: np.ndarray, f0: np.ndarray, n_frames: int, c
 # dataset loading (MIR-1K + MIREX05)
 
 def collect_mir1k_samples(config: Config):
-    """
-    Collect MIR-1K samples: each item includes:
-        name, source, audio, times, f0
-    where times/f0 are 10ms annotation (we'll interpolate later).
-    """
     print("Processing MIR-1K dataset...")
 
     wav_dir = Path(config.MIR1K_PATH) / "Wavfile"
@@ -233,10 +203,6 @@ def collect_mir1k_samples(config: Config):
 
 
 def collect_mirex05_samples(config: Config):
-    """
-    Collect MIREX05 samples: each item includes:
-        name, source, audio, times, f0
-    """
     print("Processing MIREX05 dataset...")
 
     mirex_dir = Path(config.MIREX05_PATH)
@@ -272,25 +238,6 @@ def collect_mirex05_samples(config: Config):
 # feature + label generation with augmentation
 
 def create_training_segments(samples, config: Config):
-    """
-    For each sample:
-        - For each pitch shift k ∈ PITCH_SHIFTS:
-            - pitch-shift audio by k semitones
-            - compute CQT
-            - interpolate base f0 to frames
-            - shift f0 by k semitones in Hz
-            - convert to AH1 pitch_idx, chroma, octave, voicing
-            - cut into segments of NUM_FRAMES
-
-    Returns:
-        X_segments:      list of [365, NUM_FRAMES]
-        pitch_idx_segs:  list of [NUM_FRAMES]
-        chroma_segs:     list of [NUM_FRAMES]
-        octave_segs:     list of [NUM_FRAMES]
-        voicing_segs:    list of [NUM_FRAMES]
-        pitch_hz_segs:   list of [NUM_FRAMES]
-        song_id_segs:    list of str
-    """
     print("Creating training segments with augmentation...")
 
     X_segments = []
@@ -377,10 +324,6 @@ def create_windowed_dataset(
     song_id_segments,
     config: Config,
 ):
-    """
-    Stack lists into arrays and add channel dimension:
-    X: [N, 1, 365, NUM_FRAMES]
-    """
     X = np.stack(X_segments, axis=0).astype(np.float32)  # [N, 365, T]
     y_pitch_idx = np.stack(pitch_idx_segments, axis=0).astype(np.int32)  # [N, T]
     y_chroma = np.stack(chroma_segments, axis=0).astype(np.int32)
@@ -391,7 +334,7 @@ def create_windowed_dataset(
 
     X = np.expand_dims(X, axis=1)
 
-    # Optional per-frequency normalization over training set
+    # optional per-frequency normalization over training set
     # mean/std computed over (N, time) for each freq
     mean = X.mean(axis=(0, 3), keepdims=True)
     std = X.std(axis=(0, 3), keepdims=True) + 1e-8
