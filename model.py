@@ -2,23 +2,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from typing import Tuple
-
-class Config:    
-    CQT_BINS = 365
-    NUM_FRAMES = 517
-
-    CHROMA_CLASSES = 12
-    OCTAVE_CLASSES = 7
-    VOICING_CLASSES = 2
-
-    LSTM_HIDDEN_SIZE = 128
-    FC_HIDDEN_SIZE = 256
-
-    DROPOUT_RATE = 0.5
-
+from config import model_config as config
 
 class MelodyCRNN(nn.Module):
-    def __init__(self, config: Config):
+    def __init__(self):
         super(MelodyCRNN, self).__init__()
 
         # cnn modules
@@ -40,12 +27,12 @@ class MelodyCRNN(nn.Module):
         )
 
         # bi-lstm module
-        self.lstm_input_features = (config.CQT_BINS // 4) * 64
-        self.lstm_output_size = config.LSTM_HIDDEN_SIZE * 2
+        self.lstm_input_features = (config['cqt_bins'] // 4) * 64
+        self.lstm_output_size = config['lstm_hidden_size'] * 2
 
         self.lstm = nn.LSTM(
             input_size=self.lstm_input_features,
-            hidden_size=config.LSTM_HIDDEN_SIZE,
+            hidden_size=config['lstm_hidden_size'],
             num_layers=2,
             batch_first=True,
             bidirectional=True
@@ -54,14 +41,14 @@ class MelodyCRNN(nn.Module):
         # 3 output heads for chroma, octave and svd classification
         def output_head(output_classes: int):
             return nn.Sequential(
-                nn.Linear(self.lstm_output_size, config.FC_HIDDEN_SIZE),
-                nn.Dropout(config.DROPOUT_RATE),
-                nn.Linear(config.FC_HIDDEN_SIZE, output_classes)
+                nn.Linear(self.lstm_output_size, config['fc_hidden_size']),
+                nn.Dropout(config['dropout_rate']),
+                nn.Linear(config['fc_hidden_size'], output_classes)
             )
 
-        self.chroma_head = output_head(config.CHROMA_CLASSES)
-        self.octave_head = output_head(config.OCTAVE_CLASSES)
-        self.voicing_head = output_head(config.VOICING_CLASSES)
+        self.chroma_head = output_head(config['chroma_classes'])
+        self.octave_head = output_head(config['octave_classes'])
+        self.voicing_head = output_head(config['voicing_classes'])
 
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
