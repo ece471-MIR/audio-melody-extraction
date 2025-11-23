@@ -2,6 +2,7 @@
 Re-implementation of a Multi-Task CRNN Architecture[^1] submission for the MIREX 2020 Audio Melody Extraction Challenge.
 
 ### 1. uv Virtual Environment and Dependency Installation
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/#standalone-installer) before continuing.
 ```bash
 uv venv
 uv pip install -r requirements.txt
