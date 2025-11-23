@@ -7,37 +7,14 @@ following the AH1 version description from MIREX 2020 Audio Melody Extraction.
 
 import numpy as np
 import librosa
-import pickle
 from pathlib import Path
 from tqdm import tqdm
 import warnings
+import random
+
+from config import preproc_config as config
 
 warnings.filterwarnings("ignore")
-
-# configuration
-
-class Config:
-    SAMPLE_RATE = 16000
-    HOP_SIZE = 256  
-
-    CQT_FMIN = 65.0    
-    CQT_BINS = 365      
-    BINS_PER_OCTAVE = 57  
-
-    NUM_FRAMES = 517         
-    FRAME_STEP = NUM_FRAMES // 2  
-
-    
-    C2_FREQ = 65.406   
-    NUM_PITCHES = 48   
-
-
-    PITCH_SHIFTS = [-2, -1, 0, 1, 2]
-
-    MIR1K_PATH = "./datasets/MIR-1K"             
-    MIREX05_PATH = "./datasets/mirex05TrainFiles"
-    OUTPUT_PATH = "./processed_data"
-
 
 # AH1 pitch utilities
 
@@ -51,8 +28,8 @@ def hz_to_ah1_index(f0_hz: float, c2_freq: float, num_pitches: int) -> int:
     return 0
 
 
-def hz_array_to_ah1_indices(f0_hz: np.ndarray, config: Config) -> np.ndarray:
-    func = np.vectorize(lambda x: hz_to_ah1_index(x, config.C2_FREQ, config.NUM_PITCHES))
+def hz_array_to_ah1_indices(f0_hz: np.ndarray) -> np.ndarray:
+    func = np.vectorize(lambda x: hz_to_ah1_index(x, config['c2_freq'], config['num_pitches']))
     return func(f0_hz).astype(np.int32)
 
 
@@ -70,11 +47,11 @@ def indices_to_chroma_octave(pitch_idx: np.ndarray) -> tuple[np.ndarray, np.ndar
     return chroma, octave
 
 
-def indices_to_hz(pitch_idx: np.ndarray, config: Config) -> np.ndarray:
+def indices_to_hz(pitch_idx: np.ndarray) -> np.ndarray:
     f0_hz = np.zeros_like(pitch_idx, dtype=np.float32)
     mask = pitch_idx > 0
     semitone = (pitch_idx[mask].astype(np.float32) - 1.0)
-    f0_hz[mask] = config.C2_FREQ * (2.0 ** (semitone / 12.0))
+    f0_hz[mask] = config['c2_freq'] * (2.0 ** (semitone / 12.0))
     return f0_hz
 
 
@@ -90,15 +67,15 @@ def shift_pitch_classes(pitch_idx: np.ndarray, k: int, num_pitches: int) -> np.n
 
 # CQT computation
 
-def compute_log_cqt(audio: np.ndarray, config: Config) -> np.ndarray:
+def compute_log_cqt(audio: np.ndarray) -> np.ndarray:
     cqt = librosa.cqt(
         audio,
-        sr=config.SAMPLE_RATE,
-        hop_length=config.HOP_SIZE,
-        fmin=config.CQT_FMIN,
-        n_bins=config.CQT_BINS,
-        bins_per_octave=config.BINS_PER_OCTAVE,
-        window="blackmanharris",
+        sr=config['sample_rate'],
+        hop_length=config['hop_size'],
+        fmin=config['cqt_fmin'],
+        n_bins=config['cqt_bins'],
+        bins_per_octave=config['bins_per_octave'],
+        window=config['window'],
     )
     mag = np.abs(cqt)
     log_cqt = np.log1p(mag)  
@@ -157,22 +134,22 @@ def load_mirex05_annotation(ref_path: Path) -> tuple[np.ndarray, np.ndarray]:
     return np.array(times, dtype=np.float32), np.array(f0s, dtype=np.float32)
 
 
-def interpolate_f0_to_frames(times: np.ndarray, f0: np.ndarray, n_frames: int, config: Config) -> np.ndarray:
+def interpolate_f0_to_frames(times: np.ndarray, f0: np.ndarray, n_frames: int) -> np.ndarray:
     if len(times) == 0 or len(f0) == 0:
         return np.zeros(n_frames, dtype=np.float32)
 
-    frame_times = (np.arange(n_frames, dtype=np.float32) * config.HOP_SIZE) / float(config.SAMPLE_RATE)
+    frame_times = (np.arange(n_frames, dtype=np.float32) * config['hop_size']) / float(config['sample_rate'])
     f0_per_frame = np.interp(frame_times, times, f0, left=0.0, right=0.0)
     f0_per_frame[f0_per_frame < 0] = 0.0
     return f0_per_frame.astype(np.float32)
 
 # dataset loading (MIR-1K + MIREX05)
 
-def collect_mir1k_samples(config: Config):
+def collect_mir1k_samples():
     print("Processing MIR-1K dataset...")
 
-    wav_dir = Path(config.MIR1K_PATH) / "Wavfile"
-    pitch_dir = Path(config.MIR1K_PATH) / "PitchLabel"
+    wav_dir = Path(config['mir1k_path']) / "Wavfile"
+    pitch_dir = Path(config['mir1k_path']) / "PitchLabel"
 
     if not wav_dir.exists():
         print(f"Warning: MIR-1K wavfile directory not found at {wav_dir}")
@@ -187,7 +164,7 @@ def collect_mir1k_samples(config: Config):
             print(f"Warning: No pitch label for {wav_path.name}")
             continue
 
-        audio, _ = librosa.load(wav_path, sr=config.SAMPLE_RATE, mono=True)
+        audio, _ = librosa.load(wav_path, sr=config['sample_rate'], mono=True)
         times_10ms, f0_10ms = load_mir1k_annotation(pv_path)
 
         samples.append({
@@ -202,10 +179,10 @@ def collect_mir1k_samples(config: Config):
     return samples
 
 
-def collect_mirex05_samples(config: Config):
+def collect_mirex05_samples():
     print("Processing MIREX05 dataset...")
 
-    mirex_dir = Path(config.MIREX05_PATH)
+    mirex_dir = Path(config['mirex05_path'])
     if not mirex_dir.exists():
         print(f"Warning: MIREX05 directory not found at {mirex_dir}")
         return []
@@ -221,7 +198,7 @@ def collect_mirex05_samples(config: Config):
             print(f"Warning: No REF file for {wav_path.name}")
             continue
 
-        audio, _ = librosa.load(wav_path, sr=config.SAMPLE_RATE, mono=True)
+        audio, _ = librosa.load(wav_path, sr=config['sample_rate'], mono=True)
         times, f0 = load_mirex05_annotation(ref_path)
 
         samples.append({
@@ -235,10 +212,9 @@ def collect_mirex05_samples(config: Config):
     print(f"Loaded {len(samples)} MIREX05 samples.")
     return samples
 
-# feature + label generation with augmentation
+# feature + label generation with optional augmentation
 
-def create_training_segments(samples, config: Config):
-    print("Creating training segments with augmentation...")
+def create_segments(samples, augmentation: bool):
 
     X_segments = []
     pitch_idx_segments = []
@@ -248,24 +224,26 @@ def create_training_segments(samples, config: Config):
     pitch_hz_segments = []
     song_id_segments = []
 
-    for sample in tqdm(samples, desc="Augmenting"):
+    for sample in tqdm(samples, desc="Segmenting"):
         audio = sample["audio"]
         times = sample["times"]
         f0_base = sample["f0"]
         base_name = sample["name"]
 
-        for k in config.PITCH_SHIFTS:
+        pitch_shifts = config['pitch_shifts'] if augmentation else [0]
+
+        for k in pitch_shifts:
             if k == 0:
                 audio_shift = audio
             else:
                 audio_shift = librosa.effects.pitch_shift(
-                    audio, sr=config.SAMPLE_RATE, n_steps=k
+                    audio, sr=config['sample_rate'], n_steps=k
                 )
 
-            log_cqt = compute_log_cqt(audio_shift, config)  
+            log_cqt = compute_log_cqt(audio_shift)
             n_frames = log_cqt.shape[1]
 
-            f0_per_frame = interpolate_f0_to_frames(times, f0_base, n_frames, config)
+            f0_per_frame = interpolate_f0_to_frames(times, f0_base, n_frames)
 
             if k != 0:
                 voiced_mask = f0_per_frame > 0
@@ -274,15 +252,15 @@ def create_training_segments(samples, config: Config):
             else:
                 f0_per_frame_shifted = f0_per_frame
 
-            pitch_idx = hz_array_to_ah1_indices(f0_per_frame_shifted, config)
+            pitch_idx = hz_array_to_ah1_indices(f0_per_frame_shifted)
 
             chroma, octave = indices_to_chroma_octave(pitch_idx)
             voicing = (pitch_idx > 0).astype(np.int32)
 
-            pitch_hz = indices_to_hz(pitch_idx, config)
+            pitch_hz = indices_to_hz(pitch_idx)
 
-            step = config.FRAME_STEP
-            win = config.NUM_FRAMES
+            step = config['frame_step']
+            win = config['num_frames']
 
             for start in range(0, n_frames - win + 1, step):
                 end = start + win
@@ -313,7 +291,6 @@ def create_training_segments(samples, config: Config):
         song_id_segments,
     )
 
-
 def create_windowed_dataset(
     X_segments,
     pitch_idx_segments,
@@ -321,8 +298,7 @@ def create_windowed_dataset(
     octave_segments,
     voicing_segments,
     pitch_hz_segments,
-    song_id_segments,
-    config: Config,
+    song_id_segments
 ):
     X = np.stack(X_segments, axis=0).astype(np.float32)  # [N, 365, T]
     y_pitch_idx = np.stack(pitch_idx_segments, axis=0).astype(np.int32)  # [N, T]
@@ -354,85 +330,75 @@ def create_windowed_dataset(
 
 # main pipeline
 
-def run_preprocessing(config: Config = Config()):
-    output_dir = Path(config.OUTPUT_PATH)
+def run_preprocessing():
+
+    # fixes train/val/test split for reproducibility
+    random.seed(config['random_seed'])
+
+    output_dir = Path(config['dataset_dir'])
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    mir1k_samples = collect_mir1k_samples(config)
-    mirex05_samples = collect_mirex05_samples(config)
+    mir1k_samples = collect_mir1k_samples()
+    mirex05_samples = collect_mirex05_samples()
     all_samples = mir1k_samples + mirex05_samples
 
     if not all_samples:
         print("Error: no samples loaded. Check your dataset paths.")
         return None
+    sample_count = len(all_samples)
+    print(f"\nTotal base samples: {sample_count}")
 
-    print(f"\nTotal base samples: {len(all_samples)}")
+    # make train, val, test splits according to config ratios
+    b1 = int(sample_count * config['train_ratio'])
+    b2 = int(sample_count * (config['train_ratio'] + config['val_ratio']))
+    random.shuffle(all_samples)
+    train_split = all_samples[:b1]
+    val_split = all_samples[b1:b2]
+    test_split = all_samples[b2:]
 
-    (
-        X_segments,
-        pitch_idx_segments,
-        chroma_segments,
-        octave_segments,
-        voicing_segments,
-        pitch_hz_segments,
-        song_id_segments,
-    ) = create_training_segments(all_samples, config)
-
-    dataset = create_windowed_dataset(
-        X_segments,
-        pitch_idx_segments,
-        chroma_segments,
-        octave_segments,
-        voicing_segments,
-        pitch_hz_segments,
-        song_id_segments,
-        config,
+    print("Creating training segments with augmentation...")
+    train_dataset = create_windowed_dataset(
+        *create_segments(train_split, True)
     )
 
-    print("\nDataset shapes:")
-    print(f"  X (log-CQT):    {dataset['X'].shape}")           
-    print(f"  y_pitch_idx:    {dataset['y_pitch_idx'].shape}") 
-    print(f"  y_chroma:       {dataset['y_chroma'].shape}")    
-    print(f"  y_octave:       {dataset['y_octave'].shape}")    
-    print(f"  y_voicing:      {dataset['y_voicing'].shape}")   
-    print(f"  y_pitch_hz:     {dataset['y_pitch_hz'].shape}")  
-    print(f"  song_ids:       {dataset['song_ids'].shape}")
-
-    out_file = output_dir / "ah1_training_data.npz"
-    np.savez_compressed(
-        out_file,
-        X=dataset["X"],
-        y_pitch_idx=dataset["y_pitch_idx"],
-        y_chroma=dataset["y_chroma"],
-        y_octave=dataset["y_octave"],
-        y_voicing=dataset["y_voicing"],
-        y_pitch_hz=dataset["y_pitch_hz"],
-        song_ids=dataset["song_ids"],
-        norm_mean=dataset["norm_stats"]["mean"],
-        norm_std=dataset["norm_stats"]["std"],
+    print("Creating validation, testing segments...")
+    val_dataset = create_windowed_dataset(
+        *create_segments(val_split, False)
     )
-    print(f"\nSaved processed data to {out_file}")
+    test_dataset = create_windowed_dataset(
+        *create_segments(test_split, False)
+    )
+    
+    print("\nDataset shapes:   train / val / test")
+    print(f"  X (log-CQT):    {train_dataset['X'].shape} / {val_dataset['X'].shape} / {test_dataset['X'].shape}")           
+    print(f"  y_pitch_idx:    {train_dataset['y_pitch_idx'].shape} / {val_dataset['y_pitch_idx'].shape} / {test_dataset['y_pitch_idx'].shape}") 
+    print(f"  y_chroma:       {train_dataset['y_chroma'].shape} / {val_dataset['y_chroma'].shape} / {test_dataset['y_chroma'].shape}")    
+    print(f"  y_octave:       {train_dataset['y_octave'].shape} / {val_dataset['y_octave'].shape} / {test_dataset['y_octave'].shape}")    
+    print(f"  y_voicing:      {train_dataset['y_voicing'].shape} / {val_dataset['y_voicing'].shape} / {test_dataset['y_voicing'].shape}")   
+    print(f"  y_pitch_hz:     {train_dataset['y_pitch_hz'].shape} / {val_dataset['y_pitch_hz'].shape} / {test_dataset['y_pitch_hz'].shape}")  
+    print(f"  song_ids:       {train_dataset['song_ids'].shape} / {val_dataset['song_ids'].shape} / {test_dataset['song_ids'].shape}")
 
-    config_file = output_dir / "config.pkl"
-    with open(config_file, "wb") as f:
-        pickle.dump(
-            {
-                "sample_rate": config.SAMPLE_RATE,
-                "hop_size": config.HOP_SIZE,
-                "cqt_fmin": config.CQT_FMIN,
-                "cqt_bins": config.CQT_BINS,
-                "bins_per_octave": config.BINS_PER_OCTAVE,
-                "num_frames": config.NUM_FRAMES,
-                "frame_step": config.FRAME_STEP,
-                "num_pitches": config.NUM_PITCHES,
-                "pitch_shifts": config.PITCH_SHIFTS,
-            },
-            f,
+    def save_compressed(file, dataset):
+        return np.savez_compressed(
+            file=file,
+            X=dataset["X"],
+            y_pitch_idx=dataset["y_pitch_idx"],
+            y_chroma=dataset["y_chroma"],
+            y_octave=dataset["y_octave"],
+            y_voicing=dataset["y_voicing"],
+            y_pitch_hz=dataset["y_pitch_hz"],
+            song_ids=dataset["song_ids"],
+            norm_mean=dataset["norm_stats"]["mean"],
+            norm_std=dataset["norm_stats"]["std"]
         )
-    print(f"Saved config to {config_file}")
+    
+    save_compressed(config['train_set_path'], train_dataset)
+    save_compressed(config['val_set_path'], val_dataset)
+    save_compressed(config['test_set_path'], test_dataset)
 
-    return dataset
+    print(f"\nSaved processed data to {config['dataset_dir']}")
 
+    return train_dataset, val_dataset, test_dataset
 
 if __name__ == "__main__":
     run_preprocessing()
