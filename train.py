@@ -14,21 +14,21 @@ from dataset import MelodyDataset
 from config import train_config as config
 
 def calculate_loss(chroma_logits, octave_logits, voicing_logits,
-                   y_chroma, y_octave, y_voicing, criterion):
+                   y_chroma, y_octave, y_voicing, loss_co, loss_v):
     B, T, C_chroma = chroma_logits.shape
-    loss_chroma = criterion(
+    loss_chroma = loss_co(
         chroma_logits.view(B * T, C_chroma), 
         y_chroma.view(B * T)
     )
     
     _, _, C_octave = octave_logits.shape
-    loss_octave = criterion(
+    loss_octave = loss_co(
         octave_logits.view(B * T, C_octave),
         y_octave.view(B * T)
     )
     
     _, _, C_voicing = voicing_logits.shape
-    loss_voicing = criterion(
+    loss_voicing = loss_v(
         voicing_logits.view(B * T, C_voicing),
         y_voicing.view(B * T)
     )
@@ -59,7 +59,7 @@ def calculate_accuracies(chroma_logits, octave_logits, voicing_logits,
     return c_cor, o_cor, v_cor, v_rec, v_far, v_true, v_false, frames
 
 
-def train_epoch(model, dataloader, optimizer, criterion, device):
+def train_epoch(model, dataloader, optimizer, loss_co, loss_v, device):
     model.train()
     total_loss = 0.0
     
@@ -70,7 +70,7 @@ def train_epoch(model, dataloader, optimizer, criterion, device):
         chroma_logits, octave_logits, voicing_logits = model(x)
         loss, loss_chroma, loss_octave, loss_voicing = calculate_loss(
             chroma_logits, octave_logits, voicing_logits,
-            y_chroma, y_octave, y_voicing, criterion
+            y_chroma, y_octave, y_voicing, loss_co, loss_v
         )
         loss.backward()
         optimizer.step()
@@ -80,7 +80,7 @@ def train_epoch(model, dataloader, optimizer, criterion, device):
         
     return total_loss / len(dataloader)
 
-def validate_epoch(model, dataloader, criterion, device):
+def validate_epoch(model, dataloader, loss_co, loss_v, device):
     model.eval()
     total_loss = 0.0
     
@@ -96,7 +96,7 @@ def validate_epoch(model, dataloader, criterion, device):
             chroma_logits, octave_logits, voicing_logits = model(x)
             loss, _, _, _ = calculate_loss(
                 chroma_logits, octave_logits, voicing_logits,
-                y_chroma, y_octave, y_voicing, criterion
+                y_chroma, y_octave, y_voicing, loss_co, loss_v
             )
             total_loss += loss.item()
             
@@ -148,8 +148,13 @@ def main():
     )
 
     model = MelodyCRNN().to(device)
-    criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=config['learning_rate'])
+
+    # weighed loss for voiced/unvoiced decision to prevent overfit on unvoiced
+    loss_co = nn.CrossEntropyLoss()
+    loss_v = nn.CrossEntropyLoss(
+        weight=torch.Tensor([config['unvoiced_weight'], config['voiced_weight']])
+    )
 
     model_dir = Path(config['model_dir'])
     model_dir.mkdir(parents=True, exist_ok=True)
@@ -160,8 +165,8 @@ def main():
     for epoch in range(config['epochs']):
         print(f"\nepoch {epoch+1}/{config['epochs']}")
         
-        train_loss = train_epoch(model, train_loader, optimizer, criterion, device)
-        val_loss, acc, acc_c, acc_o, rec_v, far_v = validate_epoch(model, val_loader, criterion, device)
+        train_loss = train_epoch(model, train_loader, optimizer, loss_co, loss_v, device)
+        val_loss, acc, acc_c, acc_o, rec_v, far_v = validate_epoch(model, val_loader, loss_co, loss_v, device)
         
         print(f"| train loss: {train_loss:.4f}")
         print(f"| valid loss: {val_loss:.4f}")

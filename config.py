@@ -48,5 +48,7 @@ train_config = {
     'epochs': 20,
     'batch_size': 16,
     'learning_rate': 5e-5,
+    'unvoiced_weight': 1,
+    'voiced_weight': 8
 }
 train_config.update(common_config)
