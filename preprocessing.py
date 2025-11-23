@@ -7,7 +7,6 @@ following the AH1 version description from MIREX 2020 Audio Melody Extraction.
 
 import numpy as np
 import librosa
-import pickle
 from pathlib import Path
 from tqdm import tqdm
 import warnings

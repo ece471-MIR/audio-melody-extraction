@@ -39,13 +39,14 @@ model_config = {
     'lstm_hidden_size': 128,
     'fc_hidden_size': 256,
 
-    'dropout_rate': 0.5
+    'dropout_rate': 0.6
 }
 model_config.update(common_config)
 
 train_config = {
-    'epochs': 50,
-    'batch_size': 8,
-    'learning_rate': 1e-4,
+    'model_dir': './models',
+    'epochs': 20,
+    'batch_size': 16,
+    'learning_rate': 5e-5,
 }
 train_config.update(common_config)
