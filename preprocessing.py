@@ -10,7 +10,7 @@ import librosa
 from pathlib import Path
 from tqdm import tqdm
 import warnings
-from random import shuffle
+import random
 
 from config import preproc_config as config
 
@@ -331,6 +331,10 @@ def create_windowed_dataset(
 # main pipeline
 
 def run_preprocessing():
+
+    # fixes train/val/test split for reproducibility
+    random.seed(config['random_seed'])
+
     output_dir = Path(config['dataset_dir'])
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -347,7 +351,7 @@ def run_preprocessing():
     # make train, val, test splits according to config ratios
     b1 = int(sample_count * config['train_ratio'])
     b2 = int(sample_count * (config['train_ratio'] + config['val_ratio']))
-    shuffle(all_samples)
+    random.shuffle(all_samples)
     train_split = all_samples[:b1]
     val_split = all_samples[b1:b2]
     test_split = all_samples[b2:]

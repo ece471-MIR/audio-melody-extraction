@@ -29,6 +29,7 @@ preproc_config = {
     'mirex05_path': './datasets/mirex05TrainFiles',
     'dataset_dir': './processed_data',
 
+    'random_seed': 37,
     'train_ratio': 0.50,
     'val_ratio': 0.25,
     'test_ratio': 0.25
