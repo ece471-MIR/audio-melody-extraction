@@ -237,7 +237,7 @@ def collect_adc2004_samples():
 
         samples.append({
             "name": wav_path.stem,
-            "source": "mirex05",
+            "source": "adc2004",
             "audio": audio,
             "times": times,
             "f0": f0,

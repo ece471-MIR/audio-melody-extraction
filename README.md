@@ -13,18 +13,20 @@ uv pip install -r requirements.txt
 chmod +x get_data.sh
 ./get_data.sh
 ```
-Acquires MIR-1K[^2] and MIREX05[^3] datasets as in [^1], which are stored as follows:
+Acquires MIR-1K[^2] and MIREX05[^3] datasets as in [^1], as well as ADC2004[^3] as used during MIREX 2020 Audio Melody Extraction submission evaluation[^4], which are stored as follows:
 ```
 datasets/
 ├── MIR-1K/
-└── mirex05TrainFiles/
+├── mirex05TrainFiles/
+└── adc2004_full_set/
 ```
 
 ## 3. Preprocessing
 ```
 uv run preprocessing.py
 ```
-Joins MIR-1K and MIREX05 to creates training, validation and test splits.  
+Joins MIR-1K and MIREX05 to creates training and validation splits.  
+Produces a separate testing evaluation dataset using ADC2004.  
 Augments training data and windows all data splits as in [^1].  
 Saves data splits as the following .npz zipfiles:
 ```
@@ -58,18 +60,22 @@ This pipeline follows only the AH1 label specification mentioned in [^1], not th
 uv run training.py
 ```
 Trains a MelodyCRNN model in accordance with [config.train_config](config.py).  
-The iteration of the model with the lowest validation loss after an epoch is saved to as:
+The iteration(s) of the model with the lowest validation loss and the highest accuracies across all epochs is/are saved as:
 ```
 models/
-└── melody_crnn_[TIMESTAMP].pt
+└── melody_crnn_TIMESTAMP_QUALITY.pt
 ```
-where `[TIMESTAMP]` takes the format `YYYY-MM-DD_HH-MM-SS` and stores when the training script was called, not when the model iteration was validated.
+where
+- `TIMESTAMP` takes the format `YYYYMMDD-HHMMSS` and stores when the training script was called, not when the model iteration was validated
+- `QUALITY` contains one or both of the following to indicate the model's strength:
+  - `__acc-ACCURACY` where `ACCURACY` is the total accuracy percentage across chroma, octave and voicing predictions
+  - `__val-VALLOSS` where `VALLOSS` is the validation loss (weighted according to [config.train_config](config.py)) for the model's validation epoch
 
 ## 5. Evaluation
 ```
-wip
+uv run test_eval.py MODEL_PATH
 ```
-Because a testing set is unavailable, we produce a test split of our unified MIR-1K-MIREX05 database for evaluation.
+Calculates evaluation metrics across the entire ADC2004 testing dataset for the model located at `MODEL_PATH`.
 
 ## 6. Inference
 ```
@@ -79,3 +85,4 @@ wip
 [^1]: A. Huang and H. Liu, *MIREX2020: AUDIO MELODY EXTRACTION USING NEW MULTI‐TASK CONVOLUTIONAL RECURRENT NEURAL NETWORK*. Accessed: 2025. [Online]. Available: https://www.music-ir.org/mirex/abstracts/2020/AH1.pdf
 [^2]: R. Jang, “MIR Corpora,” Multimedia Information Retrieval LAB, http://mirlab.org/dataset/public/ (accessed Nov. 23, 2025).
 [^3]: G. Poliner, “Polyphonic Melody Extraction,” LabROSA, https://labrosa.ee.columbia.edu/projects/melody/ (accessed Nov. 23, 2025).
+[^4]: “MIREX 2020: Audio Melody Extraction - ADC04 Dataset.” MIREX. Accessed November 23, 2025. https://nema.lis.illinois.edu/nema_out/mirex2020/results/ame/adc04/summary.html. 
