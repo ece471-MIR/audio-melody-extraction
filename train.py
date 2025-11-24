@@ -1,9 +1,7 @@
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader
-from typing import Tuple
+from torch.utils.data import DataLoader
 from tqdm import tqdm
 from datetime import datetime
 from pathlib import Path
@@ -34,7 +32,7 @@ def calculate_loss(chroma_logits, octave_logits, voicing_logits,
     )
     
     # equal weight between classifications (this is arbitrary)
-    loss = loss_chroma + loss_octave + loss_voicing
+    loss = loss_chroma + loss_octave + config['voicing_loss_weight'] * loss_voicing
     
     return loss, loss_chroma, loss_octave, loss_voicing
 
@@ -148,20 +146,26 @@ def main():
     )
 
     model = MelodyCRNN().to(device)
-    optimizer = optim.Adam(model.parameters(), lr=config['learning_rate'])
+    optimizer = optim.Adam(
+        model.parameters(),
+        lr=config['learning_rate'],
+        weight_decay=config['weight_decay']
+    )
 
     # weighed loss for voiced/unvoiced decision to prevent overfit on unvoiced
     loss_co = nn.CrossEntropyLoss()
     loss_v = nn.CrossEntropyLoss(
-        weight=torch.Tensor([config['unvoiced_weight'], config['voiced_weight']])
+        weight=torch.Tensor([config['unvoiced_weight'], config['voiced_weight']]).to(device)
     )
 
     model_dir = Path(config['model_dir'])
     model_dir.mkdir(parents=True, exist_ok=True)
-    model_name = f'melody_crnn_{now.year}-{now.month:02d}-{now.day:02d}_{now.hour:02d}-{now.minute:02d}-{now.second:02d}.pt'
-    model_path = f'{config['model_dir']}/{model_name}'
+    timestamp = f'{now.year}{now.month:02d}{now.day:02d}-{now.hour:02d}{now.minute:02d}{now.second:02d}'
+    model_path_start = f'{config['model_dir']}/melody_crnn_{timestamp}'
 
-    best_val_loss = float('inf')
+    best_acc = 0.0
+    best_loss = float('inf')
+    prev_acc, prev_loss, prev_both = None, None, None
     for epoch in range(config['epochs']):
         print(f"\nepoch {epoch+1}/{config['epochs']}")
         
@@ -176,12 +180,48 @@ def main():
         print(f"|  voicing recall rate:      {rec_v:.2f}%")
         print(f"|  voicing false-alarm rate: {far_v:.2f}%")
 
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
+        # welcome to a world of filename slop
+        quality = ''
+        if acc > best_acc and val_loss < best_loss:
+            if prev_both != None:
+                os.remove(prev_both)
+        if acc > best_acc:
+            if prev_acc != None:
+                os.remove(prev_acc)
+                prev_acc = None
+            quality += f'__acc-{acc:.2f}'
+        if val_loss < best_loss:
+            if prev_loss != None:
+                os.remove(prev_loss)
+                prev_loss = None
+            quality += f'__val-{val_loss:.4f}'
+        
+        if quality != '':
+            model_path = model_path_start + quality + '.pt'
             torch.save(model.state_dict(), model_path)
             print(f"| saved to {model_path}")
+        
+        if acc > best_acc and val_loss < best_loss:
+            best_acc = acc
+            best_loss = val_loss
+            prev_both = model_path
+        elif acc > best_acc:
+            if prev_both != None:
+                prev_loss = model_path_start + f'__val-{val_loss:.4f}.pt'
+                os.rename(prev_both, prev_loss)
+                prev_both = None
+            best_acc = acc
+            prev_acc = model_path
+        elif val_loss < best_loss:
+            if prev_both != None:
+                prev_acc = model_path_start + f'__acc-{best_acc:.2f}.pt'
+                os.rename(prev_both, prev_acc)
+                prev_both = None
+            best_loss = val_loss
+            prev_loss = model_path
 
-    print(f"best validation loss: {best_val_loss:.4f}")
+    print(f"best validation loss: {best_loss:.4f}")
+    print(f"best validation acc:  {best_acc:.2f}")
 
 if __name__ == "__main__":
     main()

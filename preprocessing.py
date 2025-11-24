@@ -83,7 +83,7 @@ def compute_log_cqt(audio: np.ndarray) -> np.ndarray:
 
 # annotation loaders
 
-def load_mir1k_annotation(pv_path: Path) -> tuple[np.ndarray, np.ndarray]:
+def load_pv_annotation(pv_path: Path) -> tuple[np.ndarray, np.ndarray]:
     with open(pv_path, "r") as f:
         lines = f.readlines()
 
@@ -105,7 +105,7 @@ def load_mir1k_annotation(pv_path: Path) -> tuple[np.ndarray, np.ndarray]:
     return times_10ms, f0_10ms
 
 
-def load_mirex05_annotation(ref_path: Path) -> tuple[np.ndarray, np.ndarray]:
+def load_ref_annotation(ref_path: Path) -> tuple[np.ndarray, np.ndarray]:
     times = []
     f0s = []
     with open(ref_path, "r") as f:
@@ -134,16 +134,16 @@ def load_mirex05_annotation(ref_path: Path) -> tuple[np.ndarray, np.ndarray]:
     return np.array(times, dtype=np.float32), np.array(f0s, dtype=np.float32)
 
 
-def interpolate_f0_to_frames(times: np.ndarray, f0: np.ndarray, n_frames: int) -> np.ndarray:
+def interpolate_f0_to_frames(times: np.ndarray, f0: np.ndarray, cqt_frames: int) -> np.ndarray:
     if len(times) == 0 or len(f0) == 0:
-        return np.zeros(n_frames, dtype=np.float32)
+        return np.zeros(cqt_frames, dtype=np.float32)
 
-    frame_times = (np.arange(n_frames, dtype=np.float32) * config['hop_size']) / float(config['sample_rate'])
+    frame_times = (np.arange(cqt_frames, dtype=np.float32) * config['hop_size']) / float(config['sample_rate'])
     f0_per_frame = np.interp(frame_times, times, f0, left=0.0, right=0.0)
     f0_per_frame[f0_per_frame < 0] = 0.0
     return f0_per_frame.astype(np.float32)
 
-# dataset loading (MIR-1K + MIREX05)
+# dataset loading (MIR-1K, MIREX05, ADC2004)
 
 def collect_mir1k_samples():
     print("Processing MIR-1K dataset...")
@@ -165,7 +165,7 @@ def collect_mir1k_samples():
             continue
 
         audio, _ = librosa.load(wav_path, sr=config['sample_rate'], mono=True)
-        times_10ms, f0_10ms = load_mir1k_annotation(pv_path)
+        times_10ms, f0_10ms = load_pv_annotation(pv_path)
 
         samples.append({
             "name": wav_path.stem,
@@ -198,8 +198,9 @@ def collect_mirex05_samples():
             print(f"Warning: No REF file for {wav_path.name}")
             continue
 
-        audio, _ = librosa.load(wav_path, sr=config['sample_rate'], mono=True)
-        times, f0 = load_mirex05_annotation(ref_path)
+        audio, _ = librosa.load(wav_path, sr=44100, mono=True)
+        audio = librosa.resample(audio, orig_sr=44100, target_sr=config['sample_rate'])
+        times, f0 = load_ref_annotation(ref_path)
 
         samples.append({
             "name": wav_path.stem,
@@ -210,6 +211,39 @@ def collect_mirex05_samples():
         })
 
     print(f"Loaded {len(samples)} MIREX05 samples.")
+    return samples
+
+def collect_adc2004_samples():
+    print("Processing ADC2004 dataset...")
+
+    adc_dir = Path(config['adc2004_path'])
+    if not adc_dir.exists():
+        print(f"Warning: ADC2004 directory not found at {adc_dir}")
+        return []
+
+    samples = []
+    wav_files = sorted(adc_dir.glob("*.wav"))
+
+    for wav_path in tqdm(wav_files, desc="ADC2004"):
+        ref_path = adc_dir / f"{wav_path.stem}REF.txt"
+
+        if not ref_path.exists():
+            print(f"Warning: No REF file for {wav_path.name}")
+            continue
+
+        audio, _ = librosa.load(wav_path, sr=44100, mono=True)
+        audio = librosa.resample(audio, orig_sr=44100, target_sr=config['sample_rate'])
+        times, f0 = load_ref_annotation(ref_path)
+
+        samples.append({
+            "name": wav_path.stem,
+            "source": "mirex05",
+            "audio": audio,
+            "times": times,
+            "f0": f0,
+        })
+
+    print(f"Loaded {len(samples)} ADC2004 samples.")
     return samples
 
 # feature + label generation with optional augmentation
@@ -224,13 +258,17 @@ def create_segments(samples, augmentation: bool):
     pitch_hz_segments = []
     song_id_segments = []
 
+    pitch_shifts = config['pitch_shifts'] if augmentation else [0]
+
     for sample in tqdm(samples, desc="Segmenting"):
         audio = sample["audio"]
         times = sample["times"]
         f0_base = sample["f0"]
         base_name = sample["name"]
 
-        pitch_shifts = config['pitch_shifts'] if augmentation else [0]
+        log_cqt_orig = compute_log_cqt(audio)
+        cqt_frames_orig = log_cqt_orig.shape[1]
+        f0_per_frame = interpolate_f0_to_frames(times, f0_base, cqt_frames_orig)
 
         for k in pitch_shifts:
             if k == 0:
@@ -239,11 +277,15 @@ def create_segments(samples, augmentation: bool):
                 audio_shift = librosa.effects.pitch_shift(
                     audio, sr=config['sample_rate'], n_steps=k
                 )
-
+            
+            # pad so all data enters segments
             log_cqt = compute_log_cqt(audio_shift)
-            n_frames = log_cqt.shape[1]
+            cqt_frames = log_cqt.shape[1]
+            audio_pad_len = config['hop_size'] * (config['num_frames'] - (cqt_frames % config['num_frames']))
+            padded_audio = np.concatenate((audio_shift, np.zeros((audio_pad_len))))
 
-            f0_per_frame = interpolate_f0_to_frames(times, f0_base, n_frames)
+            log_cqt = compute_log_cqt(padded_audio)
+            cqt_frames = log_cqt.shape[1]
 
             if k != 0:
                 voiced_mask = f0_per_frame > 0
@@ -253,16 +295,16 @@ def create_segments(samples, augmentation: bool):
                 f0_per_frame_shifted = f0_per_frame
 
             pitch_idx = hz_array_to_ah1_indices(f0_per_frame_shifted)
+            pitch_idx = np.concatenate((pitch_idx, np.zeros((cqt_frames - cqt_frames_orig))))
 
             chroma, octave = indices_to_chroma_octave(pitch_idx)
             voicing = (pitch_idx > 0).astype(np.int32)
 
             pitch_hz = indices_to_hz(pitch_idx)
 
-            step = config['frame_step']
             win = config['num_frames']
 
-            for start in range(0, n_frames - win + 1, step):
+            for start in range(0, cqt_frames - win + 1, win):
                 end = start + win
 
                 X_seg = log_cqt[:, start:end]          
@@ -291,7 +333,7 @@ def create_segments(samples, augmentation: bool):
         song_id_segments,
     )
 
-def create_windowed_dataset(
+def create_segmented_dataset(
     X_segments,
     pitch_idx_segments,
     chroma_segments,
@@ -340,32 +382,36 @@ def run_preprocessing():
 
     mir1k_samples = collect_mir1k_samples()
     mirex05_samples = collect_mirex05_samples()
-    all_samples = mir1k_samples + mirex05_samples
+    train_val_samples = mir1k_samples + mirex05_samples
+    test_split = collect_adc2004_samples()
 
-    if not all_samples:
-        print("Error: no samples loaded. Check your dataset paths.")
+    if not train_val_samples:
+        print("Error: no train/validation samples loaded. Check your dataset paths.")
         return None
-    sample_count = len(all_samples)
-    print(f"\nTotal base samples: {sample_count}")
+    if not test_split:
+        print("Error: no testing samples loaded. Check your dataset paths.")
+        return None
+    sample_count = len(train_val_samples)
+    print(f"\nTotal training/validation samples: {sample_count}")
+    print(f"\nTotal testing samples: {len(test_split)}")
 
     # make train, val, test splits according to config ratios
-    b1 = int(sample_count * config['train_ratio'])
-    b2 = int(sample_count * (config['train_ratio'] + config['val_ratio']))
-    random.shuffle(all_samples)
-    train_split = all_samples[:b1]
-    val_split = all_samples[b1:b2]
-    test_split = all_samples[b2:]
+    random.shuffle(train_val_samples)
+    train_split = train_val_samples[:int(sample_count * config['train_ratio'])]
+    val_split = train_val_samples[int(sample_count * config['train_ratio']):]
 
     print("Creating training segments with augmentation...")
-    train_dataset = create_windowed_dataset(
+    train_dataset = create_segmented_dataset(
         *create_segments(train_split, True)
     )
 
-    print("Creating validation, testing segments...")
-    val_dataset = create_windowed_dataset(
+    print("Creating validation segments...")
+    val_dataset = create_segmented_dataset(
         *create_segments(val_split, False)
     )
-    test_dataset = create_windowed_dataset(
+
+    print("Creating testing segments...")
+    test_dataset = create_segmented_dataset(
         *create_segments(test_split, False)
     )
     

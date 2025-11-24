@@ -39,16 +39,16 @@ class MelodyCRNN(nn.Module):
         )
 
         # 3 output heads for chroma, octave and svd classification
-        def output_head(output_classes: int):
+        def output_head(output_classes: int, hidden_size: int):
             return nn.Sequential(
-                nn.Linear(self.lstm_output_size, config['fc_hidden_size']),
+                nn.Linear(self.lstm_output_size, hidden_size),
                 nn.Dropout(config['dropout_rate']),
-                nn.Linear(config['fc_hidden_size'], output_classes)
+                nn.Linear(hidden_size, output_classes)
             )
 
-        self.chroma_head = output_head(config['chroma_classes'])
-        self.octave_head = output_head(config['octave_classes'])
-        self.voicing_head = output_head(config['voicing_classes'])
+        self.chroma_head = output_head(config['chroma_classes'], config['fc_hidden_size'])
+        self.octave_head = output_head(config['octave_classes'], config['fc_hidden_size'])
+        self.voicing_head = output_head(config['voicing_classes'], config['fc_hidden_size'])
 
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
