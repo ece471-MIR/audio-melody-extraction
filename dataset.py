@@ -2,7 +2,6 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 from typing import Tuple
-import os
 
 class MelodyDataset(Dataset):
     def __init__(self, npz_path: str):

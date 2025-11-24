@@ -18,21 +18,19 @@ preproc_config = {
     'bins_per_octave': 57,
     'window': 'blackmanharris',
 
-    'frame_step': common_config['num_frames'] // 2,
     'c2_freq': 65.406,
-    
     'num_pitches': common_config['chroma_classes']
                  * common_config['octave_classes'],
     'pitch_shifts': [-2, -1, 0, 1, 2],
 
     'mir1k_path': './datasets/MIR-1K',
     'mirex05_path': './datasets/mirex05TrainFiles',
+    'adc2004_path': './datasets/adc2004_full_set',
     'dataset_dir': './processed_data',
 
-    'random_seed': 37,
-    'train_ratio': 0.50,
-    'val_ratio': 0.25,
-    'test_ratio': 0.25
+    'random_seed': 42,
+    'train_ratio': 0.8,
+    'val_ratio': 0.2,
 }
 preproc_config.update(common_config)
 
@@ -40,16 +38,18 @@ model_config = {
     'lstm_hidden_size': 128,
     'fc_hidden_size': 256,
 
-    'dropout_rate': 0.6
+    'dropout_rate': 0.5
 }
 model_config.update(common_config)
 
 train_config = {
     'model_dir': './models',
-    'epochs': 20,
-    'batch_size': 16,
-    'learning_rate': 5e-5,
+    'epochs': 15,
+    'batch_size': 8,
+    'learning_rate': 2.5e-5,
+    'weight_decay': 2e-4,
     'unvoiced_weight': 1,
-    'voiced_weight': 8
+    'voiced_weight': 9,
+    'voicing_loss_weight': 2
 }
 train_config.update(common_config)
