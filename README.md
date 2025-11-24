@@ -21,7 +21,7 @@ datasets/
 └── adc2004_full_set/
 ```
 
-## 3. Preprocessing
+### 3. Preprocessing
 ```
 uv run preprocessing.py
 ```
@@ -35,7 +35,7 @@ processed_data/
 ├── ah1_val_set.npz
 └── ah1_test_set.npz
 ```
-### Each ```ah1_*_set.npz``` contains: 
+#### Each ```ah1_*_set.npz``` contains: 
 | key                     | shape            | description                       |
 | ----------------------- | ---------------- | --------------------------------- |
 | `X`                     | (N, 1, 365, 517) | normalized log-CQT input features |
@@ -55,7 +55,7 @@ This pipeline follows only the AH1 label specification mentioned in [^1], not th
 - Training data pitch-shift augmentation: ±2 semitones
 - See [config.preproc_config](config.py) for AH1, train/val/test split configuration details
 
-## 4. Training
+### 4. Training
 ```
 uv run training.py
 ```
@@ -71,7 +71,7 @@ where
   - `__acc-ACCURACY` where `ACCURACY` is the total accuracy percentage across chroma, octave and voicing predictions
   - `__val-VALLOSS` where `VALLOSS` is the validation loss (weighted according to [config.train_config](config.py)) for the model's validation epoch
 
-## 5. Evaluation
+### 5. Evaluation
 ```
 uv run test_eval.py MODEL_PATH
 ```
