@@ -77,11 +77,6 @@ uv run test_eval.py MODEL_PATH
 ```
 Calculates evaluation metrics across the entire ADC2004 testing dataset for the model located at `MODEL_PATH`.
 
-## 6. Inference
-```
-wip
-```
-
 [^1]: A. Huang and H. Liu, *MIREX2020: AUDIO MELODY EXTRACTION USING NEW MULTI‐TASK CONVOLUTIONAL RECURRENT NEURAL NETWORK*. Accessed: 2025. [Online]. Available: https://www.music-ir.org/mirex/abstracts/2020/AH1.pdf
 [^2]: R. Jang, “MIR Corpora,” Multimedia Information Retrieval LAB, http://mirlab.org/dataset/public/ (accessed Nov. 23, 2025).
 [^3]: G. Poliner, “Polyphonic Melody Extraction,” LabROSA, https://labrosa.ee.columbia.edu/projects/melody/ (accessed Nov. 23, 2025).
